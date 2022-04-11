@@ -11,7 +11,7 @@ with open(os.path.join(current_directory, 'README.md'), "r") as readme:
 
 setup(
     name="mercury-http",
-    version="0.1.1",
+    version="0.1.2",
     author="Sean Corbett",
     author_email="sean.corbett@umconnect.edu",
     description="Concurrent HTTP 1.X client.",

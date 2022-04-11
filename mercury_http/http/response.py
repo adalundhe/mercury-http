@@ -39,26 +39,26 @@ class Response:
         return data
 
     @property
-    def version(self) -> Union[str, Exception]:
+    def version(self) -> Union[str, None]:
         try:
             status_string = self.status_string.split()
             return status_string[0].decode()
         except Exception:
-            raise Exception('No version found.')
+            return None
 
     @property
-    def status(self) -> Union[int, Exception]:
+    def status(self) -> Union[int, None]:
         try:
             status_string = self.status_string.split()
             return int(status_string[1])
         except Exception:
-            raise Exception('No status found.')
+            return None
 
     @property
-    def reason(self) -> Union[str, Exception]:
+    def reason(self) -> Union[str, None]:
         try:
             status_string = self.status_string.split()
             return status_string[2].decode()
         except Exception:
-            raise Exception('No reason found.')
+            return None
         
