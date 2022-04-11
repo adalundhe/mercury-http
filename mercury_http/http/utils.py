@@ -74,12 +74,8 @@ def prepare_request_headers(
 async def prepare_chunks(body: Union[AsyncIterator, Iterator]):
     """Send chunks."""
     chunks = []
-    if isinstance(body, AsyncIterator):
-        async for chunk in body:
-            chunk_size = hex(len(chunk)).replace("0x", "") + _NEW_LINE
-            chunks.append(chunk_size.encode() + chunk + _NEW_LINE.encode())
 
-    elif isinstance(body, Iterator):
+    if isinstance(body, Iterator):
         for chunk in body:
             chunk_size = hex(len(chunk)).replace("0x", "") + _NEW_LINE
             chunks.append(chunk_size.encode() + chunk + _NEW_LINE.encode())

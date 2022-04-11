@@ -1,6 +1,8 @@
 import json
 from gzip import decompress as gzip_decompress
 from zlib import decompress as zlib_decompress
+from typing import Union
+
 
 class Response:
 
@@ -11,15 +13,17 @@ class Response:
         self.compressed = headers.get("content-encoding", "")
         self.content_type = headers.get("content-type", "")
         size = int(headers.get("content-length", 0))
-
+        self.status_string = status_string
         self.size = size
         self.headers = headers
         self.body = b''
         self.error = error
         self.time = 0
 
+        self._task = None
+
     @property
-    async def data(self):
+    def data(self) -> Union[str, dict, None]:
         data = self.body
         if self.compressed == "gzip":
             data = gzip_decompress(self.body)
@@ -28,6 +32,33 @@ class Response:
 
         if self.content_type == "application/json":
             data = json.loads(self.body)
+        
+        if isinstance(self.body, bytes):
+            data = data.decode()
 
         return data
+
+    @property
+    def version(self) -> Union[str, Exception]:
+        try:
+            status_string = self.status_string.split()
+            return status_string[0].decode()
+        except Exception:
+            raise Exception('No version found.')
+
+    @property
+    def status(self) -> Union[int, Exception]:
+        try:
+            status_string = self.status_string.split()
+            return int(status_string[1])
+        except Exception:
+            raise Exception('No status found.')
+
+    @property
+    def reason(self) -> Union[str, Exception]:
+        try:
+            status_string = self.status_string.split()
+            return status_string[2].decode()
+        except Exception:
+            raise Exception('No reason found.')
         
