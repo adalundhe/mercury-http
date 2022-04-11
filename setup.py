@@ -11,13 +11,13 @@ with open(os.path.join(current_directory, 'README.md'), "r") as readme:
 
 setup(
     name="mercury-http",
-    version="0.1.3",
-    author="Sean Corbett",
-    author_email="sean.corbett@umconnect.edu",
-    description="Concurrent HTTP 1.X client.",
+    version="0.1.4",
+    description="Performant HTTP client.",
     long_description=package_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/scorbettUM/mercury-client",
+    author="Sean Corbett",
+    author_email="sean.corbett@umconnect.edu",
+    url="https://github.com/scorbettUM/mercury-http",
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -28,5 +28,5 @@ setup(
         'aiodns',
         'py3-async-tools'
     ],
-    python_requires='>=3.6'
+    python_requires='>=3.8'
 )
