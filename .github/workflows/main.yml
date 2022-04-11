@@ -40,4 +40,4 @@ jobs:
       run: |
         echo "$PYRC" >> ~/.pypirc
         ls -a
-        python setup.py sdist bdist_wheel upload -r local
+        python setup.py sdist bdist_wheel
