@@ -37,6 +37,7 @@ jobs:
       env:
         TWINE_USERNAME: ${{ secrets.JFROG_USERNAME }}
         TWINE_PASSWORD: ${{ secrets.JFROG_PYPIRC }}
+        REPOSITORY_URL: ${{ secrets.JFROG_URL }}
       run: |
         python setup.py sdist bdist_wheel
         twine upload dist/*
