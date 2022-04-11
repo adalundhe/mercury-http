@@ -1,13 +1,18 @@
 import json
 from gzip import decompress as gzip_decompress
+from urllib.parse import ParseResult
 from zlib import decompress as zlib_decompress
-from typing import Union
+from typing import Dict, List, Optional, Union
 
 
 class Response:
 
-    def __init__(self, headers: dict = {}, status_string: str = None, error: Exception = None) -> None:
-        
+    def __init__(self, name: str, url: str, parsed_url: ParseResult, method: str, headers: dict = {}, status_string: str = None, error: Exception = None, user: Optional[str] = None, tags: List[Dict[str, str]] = []) -> None:
+        self.name = name
+        self.url = url
+        self.method = method
+        self.path = parsed_url.path
+        self.hostname = parsed_url.hostname
         self.chunked = headers.get("transfer-encoding", "") == "chunked"
         self.keepalive = "close" not in headers.get("connection", "")
         self.compressed = headers.get("content-encoding", "")
@@ -19,8 +24,8 @@ class Response:
         self.body = b''
         self.error = error
         self.time = 0
-
-        self._task = None
+        self.user = user
+        self.tags = tags
 
     @property
     def data(self) -> Union[str, dict, None]:
@@ -33,7 +38,7 @@ class Response:
         if self.content_type == "application/json":
             data = json.loads(self.body)
         
-        if isinstance(self.body, bytes):
+        elif isinstance(self.body, bytes):
             data = data.decode()
 
         return data

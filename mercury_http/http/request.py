@@ -1,13 +1,13 @@
 
 from ssl import SSLContext
-from typing import  Dict, Iterator, Optional, Union
+from typing import  Dict, Iterator, List, Optional, Union
 from urllib.parse import urlencode
 from .utils import prepare_chunks, prepare_request_headers
 
 
 class Request:
 
-    def __init__(self, url: str, port: int, method: str, headers: Dict[str, str], params: Dict[str, str], payload: Union[str, dict, Iterator, bytes, None], ssl_context: Optional[SSLContext]) -> None:
+    def __init__(self, url: str, port: int, method: str, headers: Dict[str, str], params: Dict[str, str], payload: Union[str, dict, Iterator, bytes, None], ssl_context: Optional[SSLContext], user: Optional[str], tags: List[Dict[str, str]]) -> None:
         self.url = url
         self.port = port
         self.method = method
@@ -19,6 +19,8 @@ class Request:
         self.host_dns = None
         self.is_stream = False
         self.encoded_headers = None
+        self.user = user
+        self.tags = tags
 
     def setup(self) -> None:
         self.setup_payload(self.payload)

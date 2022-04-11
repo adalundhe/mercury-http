@@ -1,9 +1,10 @@
 import ssl
 import asyncio
+import traceback
 import aiodns
 import time
 import random
-from typing import Awaitable, Dict, Iterator, Optional, Set, Tuple, Union
+from typing import Awaitable, Dict, Iterator, List, Optional, Set, Tuple, Union
 from urllib.parse import urlparse
 from async_tools.datatypes import AsyncList
 from asyncio import StreamReader
@@ -77,7 +78,9 @@ class MercuryHTTPClient:
         headers: Dict[str, str]={},
         params: Optional[Dict[str, str]]=None, 
         data: Optional[Union[str, dict, Iterator, bytes, None]]=None, 
-        ssl: bool=False
+        ssl: bool=False,
+        user: Optional[str] = None,
+        tags: List[Dict[str, str]] = []
     ) -> None:
         
         ssl_context = None
@@ -92,9 +95,10 @@ class MercuryHTTPClient:
             headers,
             params,
             data,
-            ssl_context
+            ssl_context,
+            user,
+            tags
         )
-
 
         parsed_url = urlparse(url)
 
@@ -133,8 +137,8 @@ class MercuryHTTPClient:
     async def execute_prepared_request(self, request_name: str) -> Union[Request, Exception]:
 
         await self.sem.acquire() 
+        request = self.requests[request_name]
         try:
-            request = self.requests[request_name]
             connection = self.pool.connections.pop()
             start = time.time()
             stream = await asyncio.wait_for(connection.connect(
@@ -160,8 +164,15 @@ class MercuryHTTPClient:
             headers = {}
             async for key, value in self.parse_headers_iterator(reader):
                 headers[key] = value
-
-            response = Response(headers=headers, status_string=line)
+            
+            response = Response(
+                request_name,
+                request.url,
+                request.parsed_url,
+                request.method,
+                headers=headers, 
+                status_string=line
+            )
             if response.size:
                 response.body = await asyncio.wait_for(reader.readexactly(response.size), self.timeouts.total_timeout)
             else:
@@ -175,7 +186,13 @@ class MercuryHTTPClient:
             return response
 
         except Exception as e:
-            return Response(error=e)
+            return Response(
+                request_name,
+                request.url,
+                request.parsed_url,
+                request.method,
+                error=e
+            )
 
     async def request(
         self, 
@@ -186,7 +203,9 @@ class MercuryHTTPClient:
         headers: Dict[str, str]={}, 
         params: Optional[Dict[str, str]]=None, 
         data: Optional[Union[str, dict, Iterator, bytes, None]]=None, 
-        ssl: bool=False
+        ssl: bool=False,
+        user: str = Optional[str],
+        tags: List[Dict[str, str]] = []
     ) -> Union[Request, Exception]:
 
         if self.requests.get(request_name) is None:
@@ -198,7 +217,9 @@ class MercuryHTTPClient:
                 headers,
                 params,
                 data,
-                ssl=ssl
+                ssl=ssl,
+                user=user,
+                tags=tags
             )
 
         elif self.hard_cache is False:
@@ -216,6 +237,8 @@ class MercuryHTTPClient:
         params: Optional[Dict[str, str]]=None, 
         data: Optional[Union[str, dict, Iterator, bytes, None]]=None, 
         ssl: bool=False,
+        user: str = Optional[str],
+        tags: List[Dict[str, str]] = [],
         concurrency: Optional[int]=None, 
         timeout: Optional[float]=None
     ):
@@ -229,7 +252,9 @@ class MercuryHTTPClient:
                 headers,
                 params,
                 data,
-                ssl=ssl
+                ssl=ssl,
+                user=user,
+                tags=tags
             )
 
         elif self.hard_cache is False:
