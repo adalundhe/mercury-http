@@ -23,7 +23,7 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
     - uses: actions/checkout@master
-    - name: Set up Python
+    - name: Set up Python 3
       uses: actions/setup-python@v1
       with:
         python-version: 3.
@@ -31,13 +31,13 @@ jobs:
       run: >-
         python -m
         pip install
-        setuptools wheel twine
+        setuptools wheel
         --user
-    - name: Build a binary wheel and a source tarball and publish
+    - name: Build a binary wheel and a source tarball
       env:
-        TWINE_USERNAME: ${{ secrets.JFROG_USERNAME }}
-        TWINE_PASSWORD: ${{ secrets.JFROG_PYPIRC }}
-        TWINE_REPOSITORY: ${{ secrets.JFROG_URL }}
+        PYRC: ${{ secrets.JFROG_PYPIRC }}
+        PYCONF: ${{ secrets.JFROG_PY_PIP_CONF }}
       run: |
-        python setup.py sdist bdist_wheel
-        twine upload dist/*
+        echo "$PYRC" >> ~/.pypirc
+        ls -a
+        python setup.py sdist bdist_wheel upload -r local
