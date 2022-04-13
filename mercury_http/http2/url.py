@@ -1,5 +1,6 @@
 import aiodns
 import asyncio
+import random
 from asyncio import AbstractEventLoop
 from urllib.parse import urlparse
 
@@ -7,7 +8,7 @@ from urllib.parse import urlparse
 class URL:
 
     def __init__(self, url: str, port: int=80, ssl=False, loop: AbstractEventLoop=asyncio.get_event_loop()) -> None:
-        self.resolver = aiodns.DNSResolver(loop=loop)
+        self.resolver = aiodns.DNSResolver()
         self.parsed = urlparse(url)
         self.port = port
         self.ip_addr = None
@@ -17,7 +18,16 @@ class URL:
     async def lookup(self):
         host = await self.resolver.gethostbyname(self.parsed.hostname, 0)
         self.ip_addr = host.addresses.pop()
+        self.ip_addr = self.ip_addr
 
+        if self.ssl:
+            self.port = 443
+
+        return self.ip_addr
+
+    def set_ip_addr_and_port(self, ip_addr):
+        self.ip_addr = ip_addr
+        
         if self.ssl:
             self.port = 443
 
@@ -32,6 +42,10 @@ class URL:
     @property
     def path(self):
         url_path = self.parsed.path
+
+        if len(url_path) == 0:
+            url_path = "/"
+
         if len(self.parsed.query) > 0:
             url_path += f'?{self.parsed.query}'
 

@@ -14,18 +14,19 @@ HTTP2ResponseFuture = Awaitable[HTTP2Response]
 HTTP2BatchResponseFuture = Awaitable[Tuple[Set[HTTP2ResponseFuture], Set[HTTP2ResponseFuture]]]
 
 
-class MercuryHTTP2Client(MercuryHTTPClient):
+class MercuryHTTP2Client:
 
     def __init__(self, concurrency: int = 10**3, timeouts: Timeouts = None, hard_cache=False) -> None:
 
         if timeouts is None:
             timeouts = Timeouts(connect_timeout=10)
 
-        super(MercuryHTTP2Client, self).__init__(
-            concurrency=concurrency, 
-            timeouts=timeouts, 
-            hard_cache=hard_cache
-        )
+        self.concurrency = concurrency
+        self.timeouts = timeouts
+        self.hard_cache = hard_cache
+        self._hosts = {}
+        self.requests = {}
+        self.sem = asyncio.Semaphore(self.concurrency)
         self.requests: Dict[str, HTTP2Request] = {}
         self.pool: HTTP2Pool = HTTP2Pool(self.concurrency, self.timeouts)
         self.ssl_context = get_http2_ssl_context()
@@ -56,7 +57,16 @@ class MercuryHTTP2Client(MercuryHTTPClient):
             tags
         )
 
-        await url_config.lookup()
+        if self._hosts.get(url_config.hostname) is None:
+            try:
+                self._hosts[url_config.hostname] = await asyncio.wait_for(url_config.lookup(), self.timeouts.connect_timeout)
+            except Exception as e:
+                raise e
+
+        else:
+            ip_addr = self._hosts[url_config.hostname]
+            url_config.set_ip_addr_and_port(ip_addr)
+
         request.update(method, headers, data)
         self.requests[request_name] = request
 
@@ -69,7 +79,7 @@ class MercuryHTTP2Client(MercuryHTTPClient):
         request = self.requests[request_name]
         await self.sem.acquire()
         connection = self.pool.connections.pop()
-        
+
         try:
             await asyncio.wait_for(connection.connect(request_name, request.url), self.timeouts.connect_timeout)
             
