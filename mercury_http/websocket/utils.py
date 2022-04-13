@@ -1,21 +1,7 @@
-from codecs import StreamReader
-import os
-from base64 import encodebytes as base64encode
 import struct
+from codecs import StreamReader
 from typing import Tuple
-
-VERSION = 13
-HEADER_LENGTH_INDEX = 6
-
-
-def _pack_hostname(hostname):
-    # IPv6 address
-    if ':' in hostname:
-        return '[' + hostname + ']'
-
-    return hostname
-
-
+from mercury_http.common.constants import HEADER_LENGTH_INDEX
 
 
 async def websocket_headers_to_iterator(reader: StreamReader):
