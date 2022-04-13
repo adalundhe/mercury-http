@@ -1,13 +1,4 @@
 import ssl
-from typing import ItemsView
-
-def has_body_headers(headers: ItemsView[str, str]) -> bool:
-    return any(
-        [
-            k.lower() == b"content-length" or k.lower() == b"transfer-encoding"
-            for k, _ in headers
-        ]
-    )
 
 
 def get_http2_ssl_context():

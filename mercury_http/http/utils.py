@@ -1,90 +1,36 @@
 
-from codecs import StreamWriter
-from typing import AsyncIterator, Iterator, Union
+from codecs import StreamReader, StreamWriter
+from typing import AsyncIterator, Awaitable, Iterator, Union
 from typing import Dict, Sequence, Tuple
 from urllib.parse import urlencode, ParseResult
 from async_tools.datatypes import AsyncList
+from mercury_http.common.response import Response
+from mercury_http.common.constants import NEW_LINE
 
 
+async def read_body(reader: StreamReader, response: Response) -> Awaitable[Response]:
+        while True:
+            chunk = await reader.readline()
+            if chunk == b'0\r\n' or chunk is None:
+                response.body += b'\r\n'
+                break
+            response.body += chunk
 
-HeadersType = Dict[str, str]
-
-_NEW_LINE = '\r\n'
-
-
-def add_headers(headers: HeadersType, headers_to_add: HeadersType):
-    """Safe add multiple headers."""
-
-    for key, data in headers_to_add.items():
-        headers[key] = data
+        return response
 
 
-def prepare_request_headers(
-    url: ParseResult,
-    # connection: Any,
-    method: str,
-    headers: Dict[str, str] = {},
-    params: Union[
-        Dict[str, str],
-        Sequence[Tuple[str, str]],
-    ] = None,
-    multipart: bool = None,
-) -> Union[bytes, Dict[str, str]]:
-        path = url.path
-        has_query = False
-        
-        if url.query:
-            has_query = True
-            path = f'{path}?{url.query}'
+async def http_headers_to_iterator(reader: StreamReader) -> Awaitable[Tuple[str, str]]:
+        """Transform loop to iterator."""
+        while True:
+            # StreamReader already buffers data reading so it is efficient.
+            res_data = await reader.readline()
+            if b": " not in res_data and b":" not in res_data:
+                break
 
-        if params:
-            params = urlencode(params)
+            decoded = res_data.rstrip().decode()
+            pair = decoded.split(": ", 1)
+            if len(pair) < 2:
+                pair = decoded.split(":")
 
-            if has_query:
-                path = f'{path}{params}'
-            
-            else:
-                path = f'{path}?{params}'
-
-        get_base = f"{method.upper()} {path} HTTP/1.1{_NEW_LINE}"
-        port = url.port or (443 if url.scheme == "https" else 80)
-        hostname = url.hostname.encode("idna").decode()
-
-        if port not in [80, 443]:
-            hostname = f'{hostname}:{port}'
-
-        
-        headers_base = {}
-
-        add_headers(headers_base, {
-            "HOST": hostname,
-            "Connection": "keep-alive",
-            "User-Agent": "mercury-http",
-            **headers
-        })
-
-
-
-        for key, value in headers_base.items():
-            get_base += f"{key}: {value}{_NEW_LINE}"
-
-        return (get_base + _NEW_LINE).encode()
-
-
-async def prepare_chunks(body: Union[AsyncIterator, Iterator]):
-    """Send chunks."""
-    chunks = []
-
-    if isinstance(body, Iterator):
-        for chunk in body:
-            chunk_size = hex(len(chunk)).replace("0x", "") + _NEW_LINE
-            chunks.append(chunk_size.encode() + chunk + _NEW_LINE.encode())
-
-    return AsyncList(chunks)
-
-
-async def write_chunks(writer: StreamWriter, body: AsyncList):
-    async for chunk in body:
-        writer.write(chunk)
-
-    writer.write(("0" + _NEW_LINE * 2).encode())
+            key, value = pair
+            yield key.lower(), value

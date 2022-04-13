@@ -1,18 +1,17 @@
+from typing import Dict
 import aiodns
-import asyncio
-import random
-from asyncio import AbstractEventLoop
 from urllib.parse import urlparse
+from .params import Params
 
 
 class URL:
 
-    def __init__(self, url: str, port: int=80, ssl=False, loop: AbstractEventLoop=asyncio.get_event_loop()) -> None:
+    def __init__(self, url: str, port: int=80) -> None:
         self.resolver = aiodns.DNSResolver()
         self.parsed = urlparse(url)
         self.port = port
         self.ip_addr = None
-        self.ssl = ssl
+        self.is_ssl = 'https' in url or 'wss' in url
         self.full = url
 
     async def lookup(self):
@@ -20,7 +19,7 @@ class URL:
         self.ip_addr = host.addresses.pop()
         self.ip_addr = self.ip_addr
 
-        if self.ssl:
+        if self.is_ssl:
             self.port = 443
 
         return self.ip_addr
@@ -28,8 +27,12 @@ class URL:
     def set_ip_addr_and_port(self, ip_addr):
         self.ip_addr = ip_addr
         
-        if self.ssl:
+        if self.is_ssl:
             self.port = 443
+
+    @property
+    def params(self):
+        return self.parsed.params
 
     @property
     def scheme(self):

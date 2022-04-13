@@ -8,13 +8,10 @@ import h2.events
 import h2.exceptions
 import h2.settings
 from enum import IntEnum
-from mercury_http.http.timeouts import Timeouts
+from mercury_http.common.timeouts import Timeouts
 from typing import AsyncIterator, Dict, List, Optional, Tuple
 from .stream import AsyncStream
-from .utils import has_body_headers
-from .url import URL
-from .response import HTTP2Response
-from .request import HTTP2Request
+from mercury_http.common import URL, Response, Request
 
 
 class HTTPConnectionState(IntEnum):
@@ -44,14 +41,16 @@ class HTTP2Connection:
         self._connected = False
         self._request_name = None
 
-    async def connect(self, request_name: str, url: URL):
-        if self._connected is False or self._request_name != request_name:
-            await self._network_stream.connect(url)
+    async def connect(self, request: Request):
+        if self._connected is False or self._request_name != request.name:
+            await self._network_stream.connect(request)
             self._connected = True
-            self._request_name = request_name
+            self._request_name = request.name
 
-    async def request(self, request_name: str, request: HTTP2Request) -> HTTP2Response:
+    async def request(self, request: Request) -> Response:
         stream_id = 1
+
+        response = Response(request)
 
         try:
             start = time.time()
@@ -78,27 +77,24 @@ class HTTP2Connection:
 
             elapsed = time.time() - start
 
-            response = HTTP2Response(
-                request_name,
-                request
-            )
-
+            
             response.time = elapsed
 
             async for chunk in self._receive_response_body(stream_id):
-                    response.content += chunk
+                    response.body += chunk
 
-            response.status = status
+            response.response_code = status
             response.headers = response_headers
             
             return response
 
         except Exception as e:
-            return HTTP2Response(
-                request_name, 
-                request, 
-                error=e
-            )
+            response.error = e
+            return response
+
+    async def close(self) -> None:
+        self._h2_state.close_connection()
+        self._state = HTTPConnectionState.CLOSED
 
     async def _send_connection_init(self) -> None:
         
@@ -119,18 +115,18 @@ class HTTP2Connection:
         self._h2_state.increment_flow_control_window(2**24)
         await self._write_outgoing_data()
 
-    async def _send_request_headers(self, stream_id: int, request: HTTP2Request) -> None:
-        end_stream = not has_body_headers(request.headers)
+    async def _send_request_headers(self, stream_id: int, request: Request) -> None:
+        end_stream = request.payload.has_data is False
 
-        self._h2_state.send_headers(stream_id, request.headers, end_stream=end_stream)
+        self._h2_state.send_headers(stream_id, request.headers.encoded_headers, end_stream=end_stream)
         self._h2_state.increment_flow_control_window(2**24, stream_id=stream_id)
         await self._write_outgoing_data()
 
-    async def _send_request_body(self, stream_id: int, request: HTTP2Request) -> None:
-        if not has_body_headers(request.headers):
+    async def _send_request_body(self, stream_id: int, request: Request) -> None:
+        if request.payload.has_data is False:
             return
 
-        async for data in request:
+        async for data in request.payload:
             while data:
                 local_flow = self._h2_state.local_flow_control_window(stream_id)
                 max_frame_size = self._h2_state.max_outbound_frame_size
@@ -215,10 +211,6 @@ class HTTP2Connection:
                     self._events[event_stream_id].append(event)
 
         await self._write_outgoing_data()
-
-    async def _response_closed(self) -> None:
-        self._h2_state.close_connection()
-        self._state = HTTPConnectionState.CLOSED
 
     async def _write_outgoing_data(self) -> None:
 

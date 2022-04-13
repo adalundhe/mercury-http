@@ -1,6 +1,6 @@
 import math
 from typing import List
-from mercury_http.http.timeouts import Timeouts
+from mercury_http.common.timeouts import Timeouts
 from .connection import HTTP2Connection
 
 

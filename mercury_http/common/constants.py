@@ -1,0 +1,2 @@
+NEW_LINE = '\r\n'
+WEBSOCKETS_VERSION = 13
