@@ -11,7 +11,7 @@ with open(os.path.join(current_directory, 'README.md'), "r") as readme:
 
 setup(
     name="mercury-http",
-    version="0.1.5",
+    version="0.2.0",
     description="Performant HTTP client.",
     long_description=package_description,
     long_description_content_type="text/markdown",

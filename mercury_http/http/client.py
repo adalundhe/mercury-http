@@ -1,14 +1,12 @@
 import ssl
 import asyncio
-import traceback
 import aiodns
 import time
 import random
-from typing import Awaitable, Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import Any, Awaitable, Dict, Iterator, List, Optional, Set, Tuple, Union
 from urllib.parse import urlparse
 from async_tools.datatypes import AsyncList
 from asyncio import StreamReader
-
 from .request import Request
 from .response import Response
 from .pool import Pool
@@ -16,6 +14,8 @@ from .timeouts import Timeouts
 from .utils import write_chunks
 
 
+HTTPResponseFuture = Awaitable[Union[Response, Exception]]
+HTTPBatchResponseFuture = Awaitable[Tuple[Set[HTTPResponseFuture], Set[HTTPResponseFuture]]]
 
 
 class MercuryHTTPClient:
@@ -41,10 +41,10 @@ class MercuryHTTPClient:
         self.pool.create_pool()
 
     
-    async def query(self, name: str, query_type: str):
+    async def query(self, name: str, query_type: str) -> Awaitable[Any]:
         return await self.resolver.query(name, query_type)
 
-    async def parse_headers_iterator(self, reader: StreamReader) -> Tuple[str, str]:
+    async def parse_headers_iterator(self, reader: StreamReader) -> Awaitable[Tuple[str, str]]:
         """Transform loop to iterator."""
         while True:
             # StreamReader already buffers data reading so it is efficient.
@@ -60,7 +60,7 @@ class MercuryHTTPClient:
             key, value = pair
             yield key.lower(), value
     
-    async def read_body(self, reader: StreamReader, response: Response) -> Response:
+    async def read_body(self, reader: StreamReader, response: Response) -> Awaitable[Response]:
         while True:
             chunk = await reader.readline()
             if chunk == b'0\r\n' or chunk is None:
@@ -70,7 +70,8 @@ class MercuryHTTPClient:
 
         return response
 
-    async def prepare_request(self, 
+    async def prepare_request(
+        self, 
         request_name: str, 
         url: str, 
         port: int=80, 
@@ -81,7 +82,7 @@ class MercuryHTTPClient:
         ssl: bool=False,
         user: Optional[str] = None,
         tags: List[Dict[str, str]] = []
-    ) -> None:
+    ) -> Awaitable[None]:
         
         ssl_context = None
         if ssl:
@@ -120,21 +121,7 @@ class MercuryHTTPClient:
         request.update(method, headers, params, payload)
         self.requests[request_name] = request
 
-
-    async def execute_prepared_batch(self, request_name: str, concurrency: int=None, timeout: float=None) -> Tuple[Set[Awaitable[Union[Request, Exception]]], Set[Awaitable[Union[Request, Exception]]]]:
-        try:
-            if concurrency is None:
-                concurrency = self.concurrency
-
-            if timeout is None:
-                timeout = self.timeouts.total_timeout
-
-            return await asyncio.wait([self.execute_prepared_request(request_name) async for _ in AsyncList(range(concurrency))], timeout=timeout)
-
-        except Exception as e:
-            return e
-
-    async def execute_prepared_request(self, request_name: str) -> Union[Request, Exception]:
+    async def execute_prepared_request(self, request_name: str) -> HTTPResponseFuture:
 
         await self.sem.acquire() 
         request = self.requests[request_name]
@@ -142,6 +129,7 @@ class MercuryHTTPClient:
             connection = self.pool.connections.pop()
             start = time.time()
             stream = await asyncio.wait_for(connection.connect(
+                request_name,
                 request.host_dns,
                 request.port,
                 ssl=request.ssl_context
@@ -194,6 +182,19 @@ class MercuryHTTPClient:
                 error=e
             )
 
+    async def execute_prepared_batch(self, request_name: str, concurrency: int=None, timeout: float=None) -> HTTPBatchResponseFuture:
+        try:
+            if concurrency is None:
+                concurrency = self.concurrency
+
+            if timeout is None:
+                timeout = self.timeouts.total_timeout
+
+            return await asyncio.wait([self.execute_prepared_request(request_name) async for _ in AsyncList(range(concurrency))], timeout=timeout)
+
+        except Exception as e:
+            return e
+
     async def request(
         self, 
         request_name: str, 
@@ -206,7 +207,7 @@ class MercuryHTTPClient:
         ssl: bool=False,
         user: str = Optional[str],
         tags: List[Dict[str, str]] = []
-    ) -> Union[Request, Exception]:
+    ) -> HTTPResponseFuture:
 
         if self.requests.get(request_name) is None:
             await self.prepare_request(
@@ -226,6 +227,7 @@ class MercuryHTTPClient:
             self.update_request(request_name, method, headers, params, data)
 
         return await self.execute_prepared_request(request_name)
+        
 
     async def batch_request(
         self, 
@@ -241,7 +243,7 @@ class MercuryHTTPClient:
         tags: List[Dict[str, str]] = [],
         concurrency: Optional[int]=None, 
         timeout: Optional[float]=None
-    ):
+    ) -> HTTPBatchResponseFuture:
 
         if self.requests.get(request_name) is None:
             await self.prepare_request(
