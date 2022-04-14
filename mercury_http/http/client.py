@@ -50,7 +50,7 @@ class MercuryHTTPClient:
             await request.setup_http_request()
 
             if self._hosts.get(request.url.hostname) is None:
-                await request.url.lookup()
+                self._hosts[request.url.hostname] = await request.url.lookup()
 
         self.requests[request.name] = request
 
