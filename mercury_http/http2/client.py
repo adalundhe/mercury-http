@@ -36,7 +36,7 @@ class MercuryHTTP2Client:
             request.ssl_context = self.ssl_context
 
         if request.is_setup is False:
-            await request.setup_http2_request()
+            request.setup_http2_request()
 
             if self._hosts.get(request.url.hostname) is None:
                 self._hosts[request.url.hostname] = await request.url.lookup()
