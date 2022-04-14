@@ -31,8 +31,15 @@ class MercuryHTTP2Client:
         self.pool.create_pool()
 
     async def prepare_request(self, request: Request) -> Awaitable[None]:
+        
         if request.url.is_ssl:
             request.ssl_context = self.ssl_context
+
+        if request.is_setup is False:
+            await request.setup_http2_request()
+
+            if self._hosts.get(request.url.hostname) is None:
+                await request.url.lookup()
 
         self.requests[request.name] = request
 

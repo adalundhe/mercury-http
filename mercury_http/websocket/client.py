@@ -22,6 +22,19 @@ class MercuryWebsocketClient(MercuryHTTPClient):
             self
         ).__init__(concurrency, timeouts, hard_cache)
 
+    async def prepare_request(self, request: Request) -> Awaitable[None]:
+        
+        if request.url.is_ssl:
+            request.ssl_context = self.ssl_context
+
+        if request.is_setup is False:
+            await request.setup_websocket_request()
+
+            if self._hosts.get(request.url.hostname) is None:
+                await request.url.lookup()
+
+        self.requests[request.name] = request
+
     async def execute_prepared_request(self, request_name: str) -> WebsocketResponseFuture:
 
         request = self.requests[request_name]

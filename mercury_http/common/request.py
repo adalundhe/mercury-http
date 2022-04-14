@@ -17,6 +17,7 @@ class Request:
         self.payload = Payload(payload)
         self.metadata = Metadata()
         self.ssl_context = None
+        self.is_setup = False
 
     def __aiter__(self):
         return self.payload.__aiter__()
@@ -34,6 +35,7 @@ class Request:
             self.headers['Content-Length'] = str(self.payload.size)
 
         self.headers.setup_http_headers(self.method, self.url, self.params)
+        self.is_setup = True
 
 
     def setup_http2_request(self):
@@ -43,11 +45,13 @@ class Request:
             self.headers['Content-Length'] = str(self.payload.size)
  
         self.headers.setup_http2_headers(self.method, self.url)
+        self.is_setup = True
 
     def setup_websocket_request(self):
         self.payload.setup_payload()
-        
+
         if self.payload.has_data:
             self.headers['Content-Length'] = str(self.payload.size)
 
         self.headers.setup_websocket_headders(self.method, self.url)
+        self.is_setup = True
