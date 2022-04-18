@@ -8,7 +8,7 @@ from .headers import Headers
 
 class Request:
 
-    def __init__(self, name: str, url: str, method: str = 'GET', headers: Dict[str, str]={}, params: Dict[str, str]={}, payload: Union[str, dict, Iterator, bytes, None]=None) -> None:
+    def __init__(self, name: str, url: str, method: str = 'GET', headers: Dict[str, str]={}, params: Dict[str, str]={}, payload: Union[str, dict, Iterator, bytes, None]=None, checks=[]) -> None:
         self.name = name
         self.method = method
         self.url = URL(url)
@@ -18,6 +18,7 @@ class Request:
         self.metadata = Metadata()
         self.ssl_context = None
         self.is_setup = False
+        self.checks = checks
 
     def __aiter__(self):
         return self.payload.__aiter__()
@@ -69,5 +70,5 @@ class Request:
             self.url, 
             timeout=grpc_request_timeout
         )
-        
+
         self.is_setup = True

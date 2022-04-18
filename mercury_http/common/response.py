@@ -15,6 +15,7 @@ class Response:
         self.method = request.method
         self.path = request.url.path
         self.hostname = request.url.hostname
+        self.checks = request.checks
         self.headers = {}
         self._size = None
         self.content_type = None
