@@ -1,10 +1,11 @@
 import time 
 import asyncio
 import traceback
+from types import FunctionType
 from mercury_http.http2 import MercuryHTTP2Client
 from mercury_http.http2.connection import HTTP2Connection
 from mercury_http.common import Timeouts, Request, Response
-from typing import Awaitable, Set, Tuple, Optional
+from typing import Awaitable, List, Set, Tuple, Optional
 from async_tools.datatypes import AsyncList
 
 
@@ -25,7 +26,7 @@ class MercuryGRPCClient(MercuryHTTP2Client):
             reset_connections=reset_connections
         )
 
-    async def prepare_request(self, request: Request) -> Awaitable[None]:
+    async def prepare_request(self, request: Request, checks: List[FunctionType]) -> Awaitable[None]:
         try:
             if request.url.is_ssl:
                 request.ssl_context = self.ssl_context
@@ -39,6 +40,9 @@ class MercuryGRPCClient(MercuryHTTP2Client):
                     self._hosts[request.url.hostname] = await request.url.lookup()
                 else:
                     request.url.ip_addr = self._hosts[request.url.hostname]
+
+                if request.checks is None:
+                    request.checks = checks
 
             self.requests[request.name] = request
 
@@ -83,13 +87,10 @@ class MercuryGRPCClient(MercuryHTTP2Client):
             self.sem.release()
             return response
 
-    async def request(
-        self, 
-        request: Request
-    ) -> GRPCResponseFuture:
+    async def request(self, request: Request, checks: Optional[List[FunctionType]]=[]) -> GRPCResponseFuture:
 
         if self.requests.get(request.name) is None:
-            await self.prepare_request(request)
+            await self.prepare_request(request, checks)
 
         elif self.hard_cache is False:
             self.requests[request.name].update(request)
@@ -101,7 +102,8 @@ class MercuryGRPCClient(MercuryHTTP2Client):
         self, 
         request: Request,
         concurrency: Optional[int]=None, 
-        timeout: Optional[float]=None
+        timeout: Optional[float]=None,
+        checks: Optional[List[FunctionType]]=[]
     ) -> GRPCBatchResponseFuture:
 
         if concurrency is None:
@@ -111,7 +113,7 @@ class MercuryGRPCClient(MercuryHTTP2Client):
             timeout = self.timeouts.total_timeout
 
         if self.requests.get(request.name) is None:
-            await self.prepare_request(request)
+            await self.prepare_request(request, checks)
 
         elif self.hard_cache is False:
             self.requests[request.name].update(request)

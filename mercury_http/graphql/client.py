@@ -3,12 +3,13 @@ import time
 
 import asyncio
 import traceback
+from types import FunctionType
 from mercury_http import http2
 from mercury_http.http2 import MercuryHTTP2Client
 from mercury_http.http import MercuryHTTPClient
 from mercury_http.common import Timeouts
 from mercury_http.common import Request, Response
-from typing import Awaitable, Union, Tuple, Set, Optional
+from typing import Awaitable, List, Union, Tuple, Set, Optional
 from async_tools.datatypes import AsyncList
 
 
@@ -38,7 +39,7 @@ class MercuryGraphQLClient:
         
         self._use_http2 = use_http2
 
-    async def prepare_request(self, request: Request) -> Awaitable[None]:
+    async def prepare_request(self, request: Request, checks: List[FunctionType]) -> Awaitable[None]:
         try:
             if request.url.is_ssl:
                 request.ssl_context = self._client.ssl_context
@@ -51,6 +52,9 @@ class MercuryGraphQLClient:
                 else:
                     request.url.ip_addr = self._client._hosts[request.url.hostname]
 
+                if request.checks is None:
+                    request.checks = checks
+
             self._client.requests[request.name] = request
         
         except Exception as e:
@@ -62,13 +66,10 @@ class MercuryGraphQLClient:
 
         return response
 
-    async def request(
-        self, 
-        request: Request
-    ) -> GraphQLResponseFuture:
+    async def request(self, request: Request, checks: List[FunctionType]=[]) -> GraphQLResponseFuture:
 
         if self._client.requests.get(request.name) is None:
-            await self.prepare_request(request)
+            await self.prepare_request(request, checks)
 
         elif self._client.hard_cache is False:
             self._client.requests[request.name].update(request)
@@ -80,7 +81,8 @@ class MercuryGraphQLClient:
         self, 
         request: Request,
         concurrency: Optional[int]=None, 
-        timeout: Optional[float]=None
+        timeout: Optional[float]=None,
+        checks: Optional[List[FunctionType]]=[]
     ) -> GraphQLBatchResponseFuture:
     
         if concurrency is None:
@@ -90,7 +92,7 @@ class MercuryGraphQLClient:
             timeout = self._client.timeouts.total_timeout
 
         if self._client.requests.get(request.name) is None:
-            await self.prepare_request(request)
+            await self.prepare_request(request, checks)
 
         elif self._client.hard_cache is False:
             self._client.requests[request.name].update(request)

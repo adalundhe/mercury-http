@@ -14,7 +14,6 @@ class Connection:
         self._connection: Tuple[StreamReader, StreamWriter] = ()
         self.connected = False
         self.reset_connection = reset_connection
-        self._protect_connection = (not self.reset_connection and not self.connected)
 
     def setup(self, dns_address: str, port: int, ssl: Union[SSLContext, None]) -> None:
         self.dns_address = dns_address
@@ -23,7 +22,7 @@ class Connection:
 
     async def connect(self, request_name: str, dns_address: str, port: int, ssl: Optional[SSLContext]=None) -> Union[Tuple[StreamReader, StreamWriter], Exception]:
         try:
-            if self._protect_connection is False or self.request_name != request_name or self.reset_connection:
+            if self.connected is False or self.request_name != request_name or self.reset_connection:
                 self._connection = await asyncio.open_connection(dns_address, port, ssl=ssl)
                 self.connected = True
 

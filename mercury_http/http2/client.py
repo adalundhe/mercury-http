@@ -1,6 +1,7 @@
 import asyncio
 import time
-from typing import Awaitable, Dict, Optional, Set, Tuple
+from types import FunctionType
+from typing import Awaitable, Dict, List, Optional, Set, Tuple
 from async_tools.datatypes import AsyncList
 from mercury_http.common.timeouts import Timeouts
 from .pool import HTTP2Pool
@@ -31,7 +32,7 @@ class MercuryHTTP2Client:
         self.ssl_context = get_http2_ssl_context()
         self.pool.create_pool()
 
-    async def prepare_request(self, request: Request) -> Awaitable[None]:
+    async def prepare_request(self, request: Request, checks: List[FunctionType]) -> Awaitable[None]:
         try:
             if request.url.is_ssl:
                 request.ssl_context = self.ssl_context
@@ -43,6 +44,9 @@ class MercuryHTTP2Client:
                     self._hosts[request.url.hostname] = await request.url.lookup()
                 else:
                     request.url.ip_addr = self._hosts[request.url.hostname]
+
+                if request.checks is None:
+                    request.checks = checks
 
             self.requests[request.name] = request
 
@@ -87,13 +91,10 @@ class MercuryHTTP2Client:
             self.sem.release()
             return response
 
-    async def request(
-        self, 
-        request: Request
-    ) -> HTTP2ResponseFuture:
+    async def request(self, request: Request, checks: Optional[List[FunctionType]]=[]) -> HTTP2ResponseFuture:
 
         if self.requests.get(request.name) is None:
-            await self.prepare_request(request)
+            await self.prepare_request(request, checks)
 
         elif self.hard_cache is False:
             self.requests[request.name].update(request)
@@ -101,12 +102,7 @@ class MercuryHTTP2Client:
 
         return await self.execute_prepared_request(request.name)
 
-    async def batch_request(
-        self, 
-        request: Request,
-        concurrency: Optional[int]=None, 
-        timeout: Optional[float]=None
-    ) -> HTTP2BatchResponseFuture:
+    async def batch_request(self, request: Request, concurrency: Optional[int]=None, timeout: Optional[float]=None, checks: Optional[List[FunctionType]]=[]) -> HTTP2BatchResponseFuture:
 
         if concurrency is None:
             concurrency = self.concurrency
@@ -115,7 +111,7 @@ class MercuryHTTP2Client:
             timeout = self.timeouts.total_timeout
 
         if self.requests.get(request.name) is None:
-            await self.prepare_request(request)
+            await self.prepare_request(request, checks)
 
         elif self.hard_cache is False:
             self.requests[request.name].update(request)

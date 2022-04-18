@@ -1,7 +1,8 @@
 import time
 import asyncio
 import traceback
-from typing import Awaitable, Optional, Union, Tuple, Set
+from types import FunctionType
+from typing import Awaitable, List, Optional, Union, Tuple, Set
 from async_tools.datatypes import AsyncList
 from mercury_http.http.client import MercuryHTTPClient
 from mercury_http.common.response import Response, Request
@@ -22,7 +23,7 @@ class MercuryWebsocketClient(MercuryHTTPClient):
             self
         ).__init__(concurrency, timeouts, hard_cache, reset_connections=reset_connection)
 
-    async def prepare_request(self, request: Request) -> Awaitable[None]:
+    async def prepare_request(self, request: Request, checks: List[FunctionType]) -> Awaitable[None]:
         try:
             if request.url.is_ssl:
                 request.ssl_context = self.ssl_context
@@ -34,6 +35,9 @@ class MercuryWebsocketClient(MercuryHTTPClient):
                     self._hosts[request.url.hostname] = await request.url.lookup()
                 else:
                     request.url.ip_addr = self._hosts[request.url.hostname]
+
+                if request.checks is None:
+                    request.checks = checks
 
             self.requests[request.name] = request
 
@@ -99,14 +103,11 @@ class MercuryWebsocketClient(MercuryHTTPClient):
             self.sem.release()
             return response
 
-    async def request(
-        self, 
-        request: Request
-    ) -> WebsocketBatchResponseFuture:
+    async def request(self, request: Request, checks: Optional[List[FunctionType]]=[]) -> WebsocketBatchResponseFuture:
 
         if self.requests.get(request.name) is None:
 
-            await self.prepare_request(request)
+            await self.prepare_request(request, checks)
 
         elif self.hard_cache is False:
             self.requests[request.name].update(request)
@@ -118,7 +119,8 @@ class MercuryWebsocketClient(MercuryHTTPClient):
         self, 
         request: Request,
         concurrency: Optional[int]=None, 
-        timeout: Optional[float]=None
+        timeout: Optional[float]=None,
+        checks: Optional[List[FunctionType]]=[]
     ) -> WebsocketBatchResponseFuture:
 
         if concurrency is None:
@@ -128,7 +130,7 @@ class MercuryWebsocketClient(MercuryHTTPClient):
             timeout = self.timeouts.total_timeout
 
         if self.requests.get(request.name) is None:
-            await self.prepare_request(request)
+            await self.prepare_request(request, checks)
 
         elif self.hard_cache is False:
             self.requests[request.name].update(request)

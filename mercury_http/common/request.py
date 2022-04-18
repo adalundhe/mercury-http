@@ -8,7 +8,7 @@ from .headers import Headers
 
 class Request:
 
-    def __init__(self, name: str, url: str, method: str = 'GET', headers: Dict[str, str]={}, params: Dict[str, str]={}, payload: Union[str, dict, Iterator, bytes, None]=None, checks=[]) -> None:
+    def __init__(self, name: str, url: str, method: str = 'GET', headers: Dict[str, str]={}, params: Dict[str, str]={}, payload: Union[str, dict, Iterator, bytes, None]=None, checks=None) -> None:
         self.name = name
         self.method = method
         self.url = URL(url)

@@ -1,8 +1,9 @@
 import ssl
 import asyncio
+from types import FunctionType
 import aiodns
 import time
-from typing import Any, Awaitable, Dict, Optional, Set, Tuple, Union
+from typing import Any, Awaitable, Dict, List, Optional, Set, Tuple, Union
 from async_tools.datatypes import AsyncList
 from mercury_http.common import Request
 from mercury_http.common import Response
@@ -38,7 +39,7 @@ class MercuryHTTPClient:
 
         self.pool.create_pool()
     
-    async def prepare_request(self, request: Request) -> Awaitable[None]:
+    async def prepare_request(self, request: Request, checks: List[FunctionType]) -> Awaitable[None]:
         try:
             if request.url.is_ssl:
                 request.ssl_context = self.ssl_context
@@ -50,6 +51,9 @@ class MercuryHTTPClient:
                     self._hosts[request.url.hostname] = await request.url.lookup()
                 else:
                     request.url.ip_addr = self._hosts[request.url.hostname]
+
+                if request.checks is None:
+                    request.checks = checks
 
             self.requests[request.name] = request
         
@@ -106,7 +110,7 @@ class MercuryHTTPClient:
             return response
 
         except Exception as e:
-            response.error = str(e)
+            response.error = e
             self.pool.connections.append(
                 Connection(reset_connection=self.pool.reset_connections)
             )
@@ -114,13 +118,10 @@ class MercuryHTTPClient:
             self.sem.release()
             return response
 
-    async def request(
-        self, 
-        request: Request
-    ) -> HTTPResponseFuture:
+    async def request(self, request: Request, checks: Optional[List[FunctionType]]=[]) -> HTTPResponseFuture:
 
         if self.requests.get(request.name) is None:
-            await self.prepare_request(request)
+            await self.prepare_request(request, checks)
 
         elif self.hard_cache is False:
             self.requests[request.name].update(request)
@@ -132,7 +133,8 @@ class MercuryHTTPClient:
         self, 
         request: Request,
         concurrency: Optional[int]=None, 
-        timeout: Optional[float]=None
+        timeout: Optional[float]=None,
+        checks: Optional[List[FunctionType]]=[]
     ) -> HTTPBatchResponseFuture:
     
         if concurrency is None:
@@ -142,7 +144,7 @@ class MercuryHTTPClient:
             timeout = self.timeouts.total_timeout
 
         if self.requests.get(request.name) is None:
-            await self.prepare_request(request)
+            await self.prepare_request(request, checks)
 
         elif self.hard_cache is False:
             self.requests[request.name].update(request)
