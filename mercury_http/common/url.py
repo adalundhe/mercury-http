@@ -9,15 +9,16 @@ class URL:
     def __init__(self, url: str, port: int=80) -> None:
         self.resolver = aiodns.DNSResolver()
         self.parsed = urlparse(url)
-        self.port = port
+        self.port = self.parsed.port if self.parsed.port else port
         self.ip_addr = None
         self.is_ssl = 'https' in url or 'wss' in url
         self.full = url
 
     async def lookup(self):
-        host = await self.resolver.gethostbyname(self.parsed.hostname, 0)
-        self.ip_addr = host.addresses.pop()
-        self.ip_addr = self.ip_addr
+        hosts = await self.resolver.query(self.parsed.hostname, 'A')
+        resolved = hosts.pop()
+        
+        self.ip_addr = resolved.host
 
         if self.is_ssl:
             self.port = 443

@@ -16,29 +16,34 @@ WebsocketBatchResponseFuture = Awaitable[Tuple[Set[WebsocketResponseFuture], Set
 class MercuryWebsocketClient(MercuryHTTPClient):
 
 
-    def __init__(self, concurrency: int = 10 ** 3, timeouts: Timeouts = Timeouts(), hard_cache=False) -> None:
+    def __init__(self, concurrency: int = 10 ** 3, timeouts: Timeouts = Timeouts(), hard_cache=False, reset_connection: bool=False) -> None:
         super(
             MercuryWebsocketClient,
             self
-        ).__init__(concurrency, timeouts, hard_cache)
+        ).__init__(concurrency, timeouts, hard_cache, reset_connections=reset_connection)
 
     async def prepare_request(self, request: Request) -> Awaitable[None]:
-        
-        if request.url.is_ssl:
-            request.ssl_context = self.ssl_context
+        try:
+            if request.url.is_ssl:
+                request.ssl_context = self.ssl_context
 
-        if request.is_setup is False:
-            request.setup_websocket_request()
+            if request.is_setup is False:
+                request.setup_websocket_request()
 
-            if self._hosts.get(request.url.hostname) is None:
-                self._hosts[request.url.hostname] = await request.url.lookup()
+                if self._hosts.get(request.url.hostname) is None:
+                    self._hosts[request.url.hostname] = await request.url.lookup()
+                else:
+                    request.url.ip_addr = self._hosts[request.url.hostname]
 
-        self.requests[request.name] = request
+            self.requests[request.name] = request
+
+        except Exception as e:
+            return Response(request, error=e, type='websocket')
 
     async def execute_prepared_request(self, request_name: str) -> WebsocketResponseFuture:
 
         request = self.requests[request_name]
-        response = Response(request)
+        response = Response(request, type='websocket')
 
         await self.sem.acquire() 
 
@@ -58,12 +63,12 @@ class MercuryWebsocketClient(MercuryHTTPClient):
             reader, writer = stream
             writer.write(request.headers.encoded_headers)
             
-            if request.payload.data:
+            if request.payload.has_data:
                 if request.payload.is_stream:
                     await request.payload.write_chunks(writer)
 
                 else:
-                    writer.write(request.payload.data)
+                    writer.write(request.payload.encoded_data)
 
             line = await asyncio.wait_for(reader.readuntil(), self.timeouts.socket_read_timeout)
 
@@ -76,6 +81,8 @@ class MercuryWebsocketClient(MercuryHTTPClient):
             if request.payload.has_data:
                 header_bits = get_header_bits(raw_headers)
                 header_content_length = get_message_buffer_size(header_bits)
+                
+            if request.method == 'GET':
                 response.body = await reader.read(min(16384, header_content_length))
             
             elapsed = time.time() - start
@@ -89,6 +96,7 @@ class MercuryWebsocketClient(MercuryHTTPClient):
 
         except Exception as e:
             response.error = e
+            self.sem.release()
             return response
 
     async def request(

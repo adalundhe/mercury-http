@@ -9,9 +9,9 @@ import h2.exceptions
 import h2.settings
 from enum import IntEnum
 from mercury_http.common.timeouts import Timeouts
-from typing import AsyncIterator, Dict, List, Optional, Tuple
+from typing import Optional
 from .stream import AsyncStream
-from mercury_http.common import URL, Response, Request
+from mercury_http.common import Response, Request
 
 
 class HTTPConnectionState(IntEnum):
@@ -22,87 +22,84 @@ class HTTPConnectionState(IntEnum):
 
 class HTTP2Connection:
     READ_NUM_BYTES = 64 * 1024
+    MAX_WINDOW_SIZE = (2**24) - 1
+    NEXT_WINDOW_SIZE = 2**24
     CONFIG = h2.config.H2Configuration(validate_inbound_headers=False)
 
-    def __init__(self, timeouts: Timeouts, keepalive_expiry: Optional[float] = None, max_streams: int = 10**2):
+    def __init__(self, timeouts: Timeouts, keepalive_expiry: Optional[float] = None, reset_connection: bool = False):
         self._network_stream = AsyncStream(timeouts)
+        self._timeouts = timeouts
         self._keepalive_expiry: Optional[float] = keepalive_expiry
         self._h2_state = h2.connection.H2Connection(config=self.CONFIG)
         self._state = HTTPConnectionState.IDLE
         self._expire_at: Optional[float] = None
         self._used_all_stream_ids = False
-        self._connection_error = False
-        self._events: Dict[int, h2.events.Event] = {}
-        self._read_exception: Optional[Exception] = None
-        self._write_exception: Optional[Exception] = None
-        self._connection_error_event: Optional[h2.events.Event] = None
-        self._max_streams_semaphore = asyncio.Semaphore(max_streams)
-        self._sent_connection_init = False
-        self._connected = False
         self._request_name = None
+        self.connected = False
+        self.reset_connection = reset_connection
 
     async def connect(self, request: Request):
-        if self._connected is False or self._request_name != request.name:
+        if self.connected is False or self._request_name != request.name or self.reset_connection:
             await self._network_stream.connect(request)
-            self._connected = True
             self._request_name = request.name
+            self._connected = True
 
-    async def request(self, request: Request) -> Response:
-        stream_id = 1
+            connection_init_data = self._prepare_connection_init()
+            self._network_stream.write(connection_init_data)
 
-        response = Response(request)
+    def get_stream_id(self) -> Response:
 
-        try:
-            start = time.time()
+        self._state = HTTPConnectionState.ACTIVE
 
-            if self._state in (HTTPConnectionState.ACTIVE, HTTPConnectionState.IDLE):
-                self._state = HTTPConnectionState.ACTIVE
+        try: 
+            stream_id = self._h2_state.get_next_available_stream_id()
 
-            if not self._sent_connection_init:
-                await self._send_connection_init()
-                self._sent_connection_init = True
-
-            try: 
-                stream_id = self._h2_state.get_next_available_stream_id()
-                self._events[stream_id] = []
-            except h2.exceptions.NoAvailableStreamIDError:
-                self._used_all_stream_ids = True
-                raise Exception('Connection unavailable.')
-                
-            self._events[stream_id] = []
-
-            await self._send_request_headers(stream_id, request)
-            await self._send_request_body(stream_id, request)
-            status, response_headers = await self._receive_response(stream_id)
-
-            elapsed = time.time() - start
-
+            return stream_id
+        except h2.exceptions.NoAvailableStreamIDError:
+            self._used_all_stream_ids = True
+            raise Exception('Connection unavailable.')
             
-            response.time = elapsed
+    async def receive_response(self, stream_id: int, response: Response):
+        
+        read_events = True
 
-            async for chunk in self._receive_response_body(stream_id):
-                    response.body += chunk
+        while read_events:
+            async for event in self._receive_events():
 
-            response.response_code = status
-            response.headers = response_headers
-            
-            return response
+                if hasattr(event, "error_code"):
+                    raise Exception(str(event))
 
-        except Exception as e:
-            response.error = e
-            return response
+                elif isinstance(event, h2.events.ResponseReceived):
+                    for k, v in event.headers:
+                        if k == b":status":
+                            status_code = int(v.decode("ascii", errors="ignore"))
+                            response.response_code = status_code
+                        elif not k.startswith(b":"):
+                            response.headers[k] = v
+
+                elif isinstance(event, h2.events.DataReceived):
+                    amount = event.flow_controlled_length
+                    self._h2_state.acknowledge_received_data(amount, stream_id)
+                    self._write_outgoing_data()
+                    response.body += event.data
+
+                elif isinstance(event, (h2.events.StreamEnded, h2.events.StreamReset)) or event == b'':
+                    read_events = False
+                    break
+        
+        return response
 
     async def close(self) -> None:
         self._h2_state.close_connection()
         self._state = HTTPConnectionState.CLOSED
 
-    async def _send_connection_init(self) -> None:
+    def _prepare_connection_init(self) -> None:
         
         self._h2_state.local_settings = h2.settings.Settings(
             client=True,
             initial_values={
                 h2.settings.SettingCodes.ENABLE_PUSH: 0,
-                h2.settings.SettingCodes.MAX_CONCURRENT_STREAMS: 100,
+                h2.settings.SettingCodes.MAX_CONCURRENT_STREAMS: 10000,
                 h2.settings.SettingCodes.MAX_HEADER_LIST_SIZE: 65536,
             },
         )
@@ -113,126 +110,52 @@ class HTTP2Connection:
 
         self._h2_state.initiate_connection()
         self._h2_state.increment_flow_control_window(2**24)
-        await self._write_outgoing_data()
+        return self._h2_state.data_to_send()
 
-    async def _send_request_headers(self, stream_id: int, request: Request) -> None:
+    def send_request_headers(self, stream_id: int, request: Request) -> None:
         end_stream = request.payload.has_data is False
 
         self._h2_state.send_headers(stream_id, request.headers.encoded_headers, end_stream=end_stream)
         self._h2_state.increment_flow_control_window(2**24, stream_id=stream_id)
-        await self._write_outgoing_data()
-
-    async def _send_request_body(self, stream_id: int, request: Request) -> None:
-        if request.payload.has_data is False:
-            return
-
-        async for data in request.payload:
-            while data:
+        headers = self._h2_state.data_to_send()
+        self._network_stream.write(headers)
+        
+    async def submit_request_body(self, stream_id: int, request: Request) -> None:
+        data = request.payload.encoded_data
+        
+        while data:
+            local_flow = self._h2_state.local_flow_control_window(stream_id)
+            max_frame_size = self._h2_state.max_outbound_frame_size
+            flow = min(local_flow, max_frame_size)
+            while flow == 0:
+                [event async for event in self._receive_events()]
                 local_flow = self._h2_state.local_flow_control_window(stream_id)
                 max_frame_size = self._h2_state.max_outbound_frame_size
                 flow = min(local_flow, max_frame_size)
-                while flow == 0:
-                    await self._receive_events()
-                    local_flow = self._h2_state.local_flow_control_window(stream_id)
-                    max_frame_size = self._h2_state.max_outbound_frame_size
-                    flow = min(local_flow, max_frame_size)
-                    
-                max_flow = flow
-                chunk_size = min(len(data), max_flow)
-                chunk, data = data[:chunk_size], data[chunk_size:]
-                self._h2_state.send_data(stream_id, chunk)
-                await self._write_outgoing_data()
+                
+            max_flow = flow
+            chunk_size = min(len(data), max_flow)
+            chunk, data = data[:chunk_size], data[chunk_size:]
+            self._h2_state.send_data(stream_id, chunk)
+            self._write_outgoing_data()
 
         self._h2_state.end_stream(stream_id)
-        await self._write_outgoing_data()
+        self._write_outgoing_data()
 
-    async def _receive_response(
-        self, stream_id: int
-    ) -> Tuple[int, List[Tuple[bytes, bytes]]]:
+    async def _receive_events(self) -> None:
+        # while not self._events.get(stream_id):
+        data = await self._network_stream.read()
+        if data == b'':
+            yield data
 
-        event: h2.events.Event = None
-        while True:
-            event = await self._receive_stream_event(stream_id)
-            if isinstance(event, h2.events.ResponseReceived):
-                break
+        for event in self._h2_state.receive_data(data):
+            yield event
 
-        status_code = 200
-        headers = []
+        self._write_outgoing_data()
 
-        if isinstance(event, h2.events.ResponseReceived):
-            for k, v in event.headers:
-                if k == b":status":
-                    status_code = int(v.decode("ascii", errors="ignore"))
-                elif not k.startswith(b":"):
-                    headers.append((k, v))
-
-        return (status_code, headers)
-
-    async def _receive_response_body(
-        self, stream_id: int
-    ) -> AsyncIterator[bytes]:
-        while True:
-            event = await self._receive_stream_event(stream_id)
-            if isinstance(event, h2.events.DataReceived):
-                amount = event.flow_controlled_length
-                self._h2_state.acknowledge_received_data(amount, stream_id)
-                await self._write_outgoing_data()
-                yield event.data
-            elif isinstance(event, (h2.events.StreamEnded, h2.events.StreamReset)):
-                break
-
-    async def _receive_stream_event(
-        self, stream_id: int
-    ) -> h2.events.Event:
-
-        while not self._events.get(stream_id):
-            await self._receive_events(stream_id)
-        event = self._events[stream_id].pop(0)
-
-        if hasattr(event, "error_code"):
-            raise Exception(str(event))
-        return event
-
-    async def _receive_events(
-        self, stream_id: Optional[int] = None
-    ) -> None:
-
-        if stream_id is None or not self._events.get(stream_id):
-            data = await self._network_stream.read()
-            events = self._h2_state.receive_data(data)
-            for event in events:
-                event_stream_id = getattr(event, "stream_id", 0)
-
-                if hasattr(event, "error_code") and event_stream_id == 0:
-                    self._connection_error_event = event
-                    raise Exception(str(event))
-
-                if event_stream_id in self._events:
-                    self._events[event_stream_id].append(event)
-
-        await self._write_outgoing_data()
-
-    async def _write_outgoing_data(self) -> None:
-
+    def _write_outgoing_data(self) -> None:
         data_to_send = self._h2_state.data_to_send()
         if data_to_send == b'':
             return
 
         self._network_stream.write(data_to_send)
-
-    def is_available(self) -> bool:
-        return (
-            self._state != HTTPConnectionState.CLOSED
-            and not self._connection_error
-            and not self._used_all_stream_ids
-        )
-
-    def has_expired(self) -> bool:
-        now = time.monotonic()
-        return self._expire_at is not None and now > self._expire_at
-
-    def is_idle(self) -> bool:
-        return self._state == HTTPConnectionState.IDLE
-
-    def is_closed(self) -> bool:
-        return self._state == HTTPConnectionState.CLOSED

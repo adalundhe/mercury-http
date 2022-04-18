@@ -1,13 +1,14 @@
 import ssl
 import asyncio
-import traceback
 import aiodns
 import time
 from typing import Any, Awaitable, Dict, Optional, Set, Tuple, Union
 from async_tools.datatypes import AsyncList
 from mercury_http.common import Request
 from mercury_http.common import Response
+from .connection import Connection
 from .pool import Pool
+from mercury_http.common.ssl import get_default_ssl_context
 from mercury_http.common.timeouts import Timeouts
 from .utils import (
     http_headers_to_iterator, 
@@ -21,9 +22,9 @@ HTTPBatchResponseFuture = Awaitable[Tuple[Set[HTTPResponseFuture], Set[HTTPRespo
 
 class MercuryHTTPClient:
 
-    def __init__(self, concurrency: int = 10**3, timeouts: Timeouts = Timeouts(), hard_cache=False) -> None:
+    def __init__(self, concurrency: int = 10**3, timeouts: Timeouts = Timeouts(), hard_cache=False, reset_connections: bool=False) -> None:
         self.concurrency = concurrency
-        self.pool = Pool(concurrency)
+        self.pool = Pool(concurrency, reset_connections=reset_connections)
         self.requests: Dict[str, Request] = {}
         self._hosts = {}
         self._parsed_urls = {}
@@ -33,26 +34,27 @@ class MercuryHTTPClient:
         self.resolver = aiodns.DNSResolver(loop=self.loop)
         self.hard_cache = hard_cache
 
-        self.ssl_context = ssl.create_default_context(
-            ssl.Purpose.SERVER_AUTH,
-        )
-        self.ssl_context.check_hostname = False
-        self.ssl_context.verify_mode = ssl.CERT_NONE
+        self.ssl_context = get_default_ssl_context()
 
         self.pool.create_pool()
     
     async def prepare_request(self, request: Request) -> Awaitable[None]:
+        try:
+            if request.url.is_ssl:
+                request.ssl_context = self.ssl_context
+
+            if request.is_setup is False:
+                request.setup_http_request()
+
+                if self._hosts.get(request.url.hostname) is None:
+                    self._hosts[request.url.hostname] = await request.url.lookup()
+                else:
+                    request.url.ip_addr = self._hosts[request.url.hostname]
+
+            self.requests[request.name] = request
         
-        if request.url.is_ssl:
-            request.ssl_context = self.ssl_context
-
-        if request.is_setup is False:
-            request.setup_http_request()
-
-            if self._hosts.get(request.url.hostname) is None:
-                self._hosts[request.url.hostname] = await request.url.lookup()
-
-        self.requests[request.name] = request
+        except Exception as e:
+            return Response(request, error=e)
 
     async def execute_prepared_request(self, request_name: str) -> HTTPResponseFuture:
 
@@ -62,7 +64,6 @@ class MercuryHTTPClient:
         await self.sem.acquire() 
         try:
             connection = self.pool.connections.pop()
-
             start = time.time()
 
             stream = await asyncio.wait_for(connection.connect(
@@ -83,7 +84,7 @@ class MercuryHTTPClient:
                     await request.payload.write_chunks(writer)
 
                 else:
-                    writer.write(request.payload.data)
+                    writer.write(request.payload.encoded_data)
 
             line = await asyncio.wait_for(reader.readuntil(), self.timeouts.socket_read_timeout)
             response.response_code = line
@@ -106,6 +107,11 @@ class MercuryHTTPClient:
 
         except Exception as e:
             response.error = str(e)
+            self.pool.connections.append(
+                Connection(reset_connection=self.pool.reset_connections)
+            )
+
+            self.sem.release()
             return response
 
     async def request(

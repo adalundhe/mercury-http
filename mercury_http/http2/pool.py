@@ -6,15 +6,16 @@ from .connection import HTTP2Connection
 
 class HTTP2Pool:
 
-    def __init__(self, size: int, timeouts: Timeouts) -> None:
+    def __init__(self, size: int, timeouts: Timeouts, reset_connections=False) -> None:
         self.size = size
         self.connections: List[HTTP2Connection] = []
         self.timeouts = timeouts
         self.pools_count = math.ceil(size/100)
+        self.reset_connections = reset_connections
 
     def create_pool(self) -> None:
         self.connections = [
-            HTTP2Connection(self.timeouts) for _ in range(self.size)
+            HTTP2Connection(self.timeouts, reset_connection=self.reset_connections) for _ in range(self.size)
         ]
 
     async def close(self):

@@ -1,9 +1,10 @@
+from ctypes import c_char_p
 import os
+import enum
 from base64 import encodebytes as base64encode
 from typing import Dict
 from urllib.parse import urlencode
 from typing import Union
-
 from mercury_http.common.params import Params
 from .constants import NEW_LINE, WEBSOCKETS_VERSION
 from .url import URL
@@ -71,7 +72,7 @@ class Headers:
 
 
     def setup_http2_headers(self, method: str, url: URL) -> None:
-
+        
         self.encoded_headers = [
                 (b":method", method),
                 (b":authority", url.authority),
@@ -156,3 +157,22 @@ class Headers:
         headers.append("")
 
         self.encoded_headers = '\r\n'.join(headers).encode()
+
+    def setup_graphql_headers(self, url: URL, params: Params, use_http2=False):
+        self.data['Content-Type'] = "application/json"
+
+        if use_http2:
+            self.setup_http2_headers("POST", url)
+
+        else:
+            self.setup_http_headers("POST", url, params)
+
+    def setup_grpc_headers(self, url: URL, timeout=60):
+        grpc_headers = {
+            'Content-Type': 'application/grpc',
+            'Grpc-Timeout': f'{timeout}S',
+            'TE': 'trailers'
+        }
+        self.data.update(grpc_headers)
+
+        self.setup_http2_headers("POST", url)

@@ -29,7 +29,7 @@ async def http_headers_to_iterator(reader: StreamReader) -> Awaitable[Tuple[str,
 
             decoded = res_data.rstrip().decode()
             pair = decoded.split(": ", 1)
-            if len(pair) < 2:
+            if pair and len(pair) < 2:
                 pair = decoded.split(":")
 
             key, value = pair

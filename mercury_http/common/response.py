@@ -1,3 +1,4 @@
+import binascii
 import json
 from gzip import decompress as gzip_decompress
 from urllib.parse import ParseResult
@@ -8,7 +9,7 @@ from mercury_http.common import Request
 
 class Response:
 
-    def __init__(self, request: Request, error: Exception = None) -> None:
+    def __init__(self, request: Request, error: Exception = None, type: str = 'http') -> None:
         self.name = request.name
         self.url = request.url.full
         self.method = request.method
@@ -25,6 +26,7 @@ class Response:
         self.tags = request.metadata.tags
         self.extentions = {}
         self.response_code = None
+        self.type = type
 
     def _set_response_headers(self, response_headers: dict = {}):
         self.content_type = response_headers.get("content-type", "")
@@ -84,3 +86,12 @@ class Response:
 
         except Exception:
             return None
+
+    def grpc_decode(self, protobuf):
+        wire_msg = binascii.b2a_hex(self.body)
+
+        message_length = wire_msg[4:10]
+        msg = wire_msg[10:10+int(message_length, 16)*2]
+        protobuf.ParseFromString(binascii.a2b_hex(msg))
+
+        return protobuf

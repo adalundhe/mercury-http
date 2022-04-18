@@ -55,3 +55,19 @@ class Request:
 
         self.headers.setup_websocket_headders(self.method, self.url)
         self.is_setup = True
+
+    def setup_graphql_request(self, use_http2=False):
+        self.method = 'POST'
+        self.payload.setup_graphql_query()
+        self.headers.setup_graphql_headers(self.url, self.params, use_http2=use_http2)
+        self.is_setup = True
+
+    def setup_grpc_request(self, grpc_request_timeout=60):
+        self.method = 'POST'
+        self.payload.setup_grpc_protobuf()
+        self.headers.setup_grpc_headers(
+            self.url, 
+            timeout=grpc_request_timeout
+        )
+        
+        self.is_setup = True
