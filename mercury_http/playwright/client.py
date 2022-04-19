@@ -14,7 +14,7 @@ PlaywrightResponseFuture = Awaitable[Union[Result, Exception]]
 PlaywrightBatchResponseFuture = Awaitable[Tuple[Set[PlaywrightResponseFuture], Set[PlaywrightResponseFuture]]]
 
 
-class PlaywrightClient:
+class MercuryPlaywrightClient:
 
     def __init__(self,  concurrency: int = 500, group_size: int=100, timeouts: Timeouts = Timeouts()) -> None:
         self.concurrency = concurrency

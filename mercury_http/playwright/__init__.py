@@ -1,4 +1,4 @@
-from .client import PlaywrightClient
+from .client import MercuryPlaywrightClient
 from .command import (
     Command,
     Page,
