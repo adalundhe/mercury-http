@@ -5,6 +5,7 @@ class Result:
 
     def __init__(self, command: Command, error: Exception=None) -> None:
         self.type = 'playwright'
+        self.name = command.name
         self.error = error
         self.time = 0
         self.user = command.metadata.user
