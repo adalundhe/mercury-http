@@ -11,7 +11,7 @@ with open(os.path.join(current_directory, 'README.md'), "r") as readme:
 
 setup(
     name="mercury-http",
-    version="0.4.3",
+    version="0.4.4",
     description="Performant HTTP client.",
     long_description=package_description,
     long_description_content_type="text/markdown",
@@ -28,7 +28,8 @@ setup(
         'aiodns',
         'h2',
         'graphql-core',
-        'py3-async-tools'
+        'py3-async-tools',
+        'playwright'
     ],
     python_requires='>=3.8'
 )
