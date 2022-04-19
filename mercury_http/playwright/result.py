@@ -10,7 +10,6 @@ class Result:
         self.time = 0
         self.user = command.metadata.user
         self.tags = command.metadata.tags
-        self.type = command.command
         self.url = command.url.location
         self.headers = command.url.headers
         self.checks = command.checks
