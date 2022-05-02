@@ -2,6 +2,7 @@ import math
 from typing import List
 from mercury_http.common.timeouts import Timeouts
 from .connection import HTTP2Connection
+from .stream import AsyncStream
 
 
 class HTTP2Pool:
@@ -15,7 +16,7 @@ class HTTP2Pool:
 
     def create_pool(self) -> None:
         self.connections = [
-            HTTP2Connection(self.timeouts, reset_connection=self.reset_connections) for _ in range(self.size)
+            AsyncStream(idx, self.timeouts, self.size, self.reset_connections) for idx in range(0, self.size * 2, 2)
         ]
 
     async def close(self):

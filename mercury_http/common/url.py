@@ -17,7 +17,6 @@ class URL:
     async def lookup(self):
         hosts = await self.resolver.query(self.parsed.hostname, 'A')
         resolved = hosts.pop()
-        
         self.ip_addr = resolved.host
 
         if self.is_ssl:

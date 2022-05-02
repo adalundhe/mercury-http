@@ -11,6 +11,7 @@ class Connection:
         self.port: int = None
         self.ssl: SSLContext = None
         self.request_name = None
+        self.lock = asyncio.Lock()
         self._connection: Tuple[StreamReader, StreamWriter] = ()
         self.connected = False
         self.reset_connection = reset_connection

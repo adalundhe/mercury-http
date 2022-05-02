@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, Iterator, Union
+from typing import Dict, Iterator, Union, List
 from .params import Params
 from .metadata import Metadata
 from .url import URL
@@ -8,14 +8,14 @@ from .headers import Headers
 
 class Request:
 
-    def __init__(self, name: str, url: str, method: str = 'GET', headers: Dict[str, str]={}, params: Dict[str, str]={}, payload: Union[str, dict, Iterator, bytes, None]=None, checks=None) -> None:
+    def __init__(self, name: str, url: str, method: str = 'GET', headers: Dict[str, str]={}, params: Dict[str, str]={}, payload: Union[str, dict, Iterator, bytes, None]=None, user: str=None, tags: List[Dict[str, str]]=[],  checks=None) -> None:
         self.name = name
         self.method = method
         self.url = URL(url)
         self.params = Params(params)
         self.headers = Headers(headers)
         self.payload = Payload(payload)
-        self.metadata = Metadata()
+        self.metadata = Metadata(user, tags)
         self.ssl_context = None
         self.is_setup = False
         self.checks = checks

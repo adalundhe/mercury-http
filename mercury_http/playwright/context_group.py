@@ -21,6 +21,7 @@ class ContextGroup:
         self.concurrency = concurrency
         self.librarians: List[CommandLibrarian] = []
         self.config = {}
+        self.contexts = []
         self.sem = asyncio.Semaphore(concurrency)
 
     async def create(self) -> None:
@@ -71,7 +72,7 @@ class ContextGroup:
             else:
                 context = await self.browser.new_context()
                 
-
+            self.contexts.append(context)
             page = await context.new_page()
             command_librarian = CommandLibrarian(page)
 
@@ -115,7 +116,11 @@ class ContextGroup:
         ], timeout=timeout)
 
     async def close(self):
-        for librarian in self.librarians:
-            await librarian.command_library.page.close()
-            
-        await self.browser.close()
+        try:
+            for context in self.contexts:
+                await context.close()
+                
+            await self.browser.close()
+        
+        except Exception:
+            pass

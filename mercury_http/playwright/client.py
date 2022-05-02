@@ -16,7 +16,7 @@ PlaywrightBatchResponseFuture = Awaitable[Tuple[Set[PlaywrightResponseFuture], S
 
 class MercuryPlaywrightClient:
 
-    def __init__(self,  concurrency: int = 500, group_size: int=100, timeouts: Timeouts = Timeouts()) -> None:
+    def __init__(self,  concurrency: int = 500, group_size: int=50, timeouts: Timeouts = Timeouts()) -> None:
         self.concurrency = concurrency
         self.pool = ContextPool(concurrency, group_size)
         self.timeouts = timeouts
@@ -32,7 +32,7 @@ class MercuryPlaywrightClient:
     async def prepare_command(self, command: Command, checks: List[FunctionType]) -> Awaitable[None]:
         if command.checks is None:
             command.checks = checks
-
+        
         command.options.extra = {
             **command.options.extra,
             'timeout': self.timeouts.total_timeout * 1000
@@ -42,15 +42,21 @@ class MercuryPlaywrightClient:
 
     async def execute_prepared_command(self, command_name: str) -> PlaywrightResponseFuture:
         command = self.commands[command_name]
+        result = Result(command)
 
-        await self.sem.acquire()
+        try:
+            await self.sem.acquire()
 
-        context = random.choice(self.pool.contexts)
-        result = await context.execute(command)
+            context = random.choice(self.pool.contexts)
+            result = await context.execute(command)
 
-        self.sem.release()
+            self.sem.release()
 
-        return result
+            return result
+
+        except Exception as e:
+            result.error = e
+            return result
 
     async def request(self, command: Command, checks: Optional[List[FunctionType]]=[]) -> PlaywrightResponseFuture:
 

@@ -20,6 +20,7 @@ async def open_tls_stream(request: Request):
     loop = asyncio.get_running_loop()
     reader = asyncio.StreamReader(limit=2**64, loop=loop)
     protocol = TLSStreamReaderProtocol(reader, loop=loop)
+
     transport, _ = await loop.create_connection(
         lambda: protocol, request.url.ip_addr, request.url.port, family=socket.AF_INET
     )
@@ -44,19 +45,33 @@ async def open_tls_stream(request: Request):
 
 
 class AsyncStream:
-    READ_NUM_BYTES = 65536
+    READ_NUM_BYTES=65536
 
-    def __init__(self, timeouts: Timeouts) -> None:
+    def __init__(self, stream_id: int, timeouts: Timeouts, concurrency: int, reset_connection: bool) -> None:
         self.reader: StreamReader = None
         self.writer: StreamWriter = None
         self.timeouts = timeouts
-        self._connected = False
+        self.connected = False
+        self.init_id = stream_id
+        self.reset_connection = reset_connection
+
+        if self.init_id%2 == 0:
+            self.init_id += 1
+
+        self.stream_id = 0
+        self.concurrency = concurrency
 
     async def connect(self, request: Request):
-        if self._connected is False:
+        if self.connected is False or self.reset_connection:
             stream = await asyncio.wait_for(open_tls_stream(request), self.timeouts.connect_timeout)
-            
             self.reader, self.writer = stream
+            self.connected = True
+            self.stream_id = self.init_id
+
+        else:
+            self.stream_id += self.concurrency
+            if self.stream_id%2 == 0:
+                self.stream_id += 1
 
     def write(self, data: bytes):
         self.writer.write(data)

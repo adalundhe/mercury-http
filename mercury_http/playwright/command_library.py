@@ -63,7 +63,7 @@ class CommandLibrary:
         await self.page.eval_on_selector(
             command.page.selector, 
             command.input.function, 
-            command.input.args, 
+            *command.input.args, 
             **command.options.extra
         )
 
@@ -71,21 +71,21 @@ class CommandLibrary:
         await self.page.eval_on_selector_all(
             command.page.selector,
             command.input.function, 
-            command.input.args, 
+            *command.input.args, 
             **command.options.extra
         )
 
     async def evaluate_function(self, command: Command):
         await self.page.evaluate(
             command.input.function, 
-            command.input.args, 
+            *command.input.args, 
             **command.options.extra
         )
 
     async def evaluate_handle(self, command: Command):
         await self.page.evaluate_handle(
             command.input.function, 
-            command.input.args, 
+            *command.input.args, 
             **command.options.extra
         )
 
@@ -290,7 +290,7 @@ class CommandLibrary:
     async def wait_for_function(self, command: Command):
         await self.page.wait_for_function(
             command.input.function, 
-            command.input.args, 
+            *command.input.args, 
             **command.options.extra
         )
 

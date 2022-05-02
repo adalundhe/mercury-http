@@ -1,5 +1,6 @@
 import ssl
 import asyncio
+import traceback
 from types import FunctionType
 import aiodns
 import time
@@ -34,7 +35,8 @@ class MercuryHTTPClient:
         self.loop = asyncio.get_event_loop()
         self.resolver = aiodns.DNSResolver(loop=self.loop)
         self.hard_cache = hard_cache
-
+        self.running = False
+        self.responses = []
         self.ssl_context = get_default_ssl_context()
 
         self.pool.create_pool()
@@ -60,16 +62,18 @@ class MercuryHTTPClient:
         except Exception as e:
             return Response(request, error=e)
 
-    async def execute_prepared_request(self, request_name: str) -> HTTPResponseFuture:
+    async def execute_prepared_request(self, request_name: str, idx: int) -> HTTPResponseFuture:
 
         request = self.requests[request_name]
         response = Response(request)
 
-        await self.sem.acquire() 
+        stream_idx = idx%self.pool.size
+
+        connection = self.pool.connections[stream_idx]
         try:
-            connection = self.pool.connections.pop()
             start = time.time()
 
+            await connection.lock.acquire()
             stream = await asyncio.wait_for(connection.connect(
                 request_name,
                 request.url.ip_addr,
@@ -105,17 +109,12 @@ class MercuryHTTPClient:
 
             response.time = elapsed
             
-            self.pool.connections.append(connection)
-            self.sem.release()
+            connection.lock.release()
             return response
 
         except Exception as e:
             response.error = e
-            self.pool.connections.append(
-                Connection(reset_connection=self.pool.reset_connections)
-            )
-
-            self.sem.release()
+            self.pool.connections[stream_idx] = Connection(reset_connection=self.pool.reset_connections)
             return response
 
     async def request(self, request: Request, checks: Optional[List[FunctionType]]=[]) -> HTTPResponseFuture:
@@ -150,4 +149,4 @@ class MercuryHTTPClient:
             self.requests[request.name].update(request)
             self.requests[request.name].setup_http_request()
 
-        return await asyncio.wait([self.execute_prepared_request(request.name) async for _ in AsyncList(range(concurrency))], timeout=timeout)
+        return await asyncio.wait([self.execute_prepared_request(request.name, idx) async for idx in range(concurrency)], timeout=timeout)

@@ -26,7 +26,7 @@ async def http_headers_to_iterator(reader: StreamReader) -> Awaitable[Tuple[str,
             res_data = await reader.readline()
             if b": " not in res_data and b":" not in res_data:
                 break
-
+            
             decoded = res_data.rstrip().decode()
             pair = decoded.split(": ", 1)
             if pair and len(pair) < 2:

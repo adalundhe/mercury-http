@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 from mercury_http.common.metadata import Metadata
 
 
@@ -39,7 +39,7 @@ class Options:
 
 class Command:
     
-    def __init__(self, name, command, page: Page=Page(), url: URL=URL(), input: Input=Input(), options: Options=Options(), checks=None) -> None:
+    def __init__(self, name, command, page: Page=Page(), url: URL=URL(), input: Input=Input(), options: Options=Options(), user: str=None, tags: List[Dict[str, str]]=[], checks=None) -> None:
         self.name = name
         self.command = command
         self.page = page
@@ -47,4 +47,4 @@ class Command:
         self.input = input
         self.options = options
         self.checks = checks
-        self.metadata = Metadata()
+        self.metadata = Metadata(user, tags)
